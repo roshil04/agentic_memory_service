@@ -23,8 +23,7 @@ logging.getLogger("google_genai._api_client").setLevel(logging.ERROR)
 logging.getLogger("google_genai.types").setLevel(logging.ERROR)
 
 
-# USER_ID = "Postgres_Session_User"
-USER_ID = "Postgres_Session_Ibrahim"
+USER_ID = "Postgres_Session_User"
 DB_URL = "postgresql://postgres:newpassword@localhost:5432/postgres"
 
 MEMORY_TABLE = "chat_history"
@@ -135,7 +134,7 @@ Agent:"""
         return None
 
 async def chat_loop(runner, session_service):
-    # Generate a session ID
+    # Generate a session ID 
     session_id = f"postgres_session_{uuid.uuid4().hex[:8]}"
 
     # Try to get an existing session
