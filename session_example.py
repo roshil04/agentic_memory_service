@@ -21,7 +21,6 @@ from google.adk.sessions import DatabaseSessionService
 from google.adk.artifacts import InMemoryArtifactService
 from google.genai import types
 
-# --------------------- Load Environment ---------------------
 load_dotenv()
 
 logging.basicConfig(level=logging.WARNING)
@@ -29,12 +28,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("google_genai._api_client").setLevel(logging.ERROR)
 logging.getLogger("google_genai.types").setLevel(logging.ERROR)
 
-# --------------------- Config ---------------------
 USER_ID = "Postgres_Session_Memory_User"
 DB_URL = "postgresql://postgres:newpassword@localhost:5432/postgres"
 MEMORY_TABLE = "chat_history"
 
-# --------------------- Database ---------------------
 def init_memory_table():
     conn = psycopg2.connect(dbname="postgres", user="postgres", password="newpassword", host="localhost")
     cur = conn.cursor()
@@ -97,7 +94,6 @@ def load_user_memory(user_id):
         for role, msg, created_at in rows
     ])
 
-# --------------------- Agent Setup ---------------------
 def setup_agent_environment():
     print("Initializing PostgreSQL-backed session service...")
     session_service = DatabaseSessionService(db_url=DB_URL)
@@ -127,14 +123,12 @@ def setup_agent_environment():
     print(" PostgreSQL session system initialized successfully!\n")
     return runner, session_service
 
-# --------------------- Display ---------------------
 def display_message(role: str, text: str):
     icons = {"User": "💬", "Agent": "🤖"}
     prefix = icons.get(role, "")
     name = "PostgresKnowledgeAgent" if role == "Agent" else "User"
     print(f"{prefix} {name}: {text or '(No response)'}")
 
-# --------------------- Agent Reply ---------------------
 def generate_agent_reply(runner, session, user_input):
     display_message("User", user_input)
 
@@ -147,7 +141,6 @@ def generate_agent_reply(runner, session, user_input):
     if not include_dates:
         memory_text = re.sub(r"\[\d{4}-\d{2}-\d{2}\]", "", memory_text)
 
-# --------------------- Detect if the user mentioned a person's name ---------------------
     name_pattern = r"\b(Roshil|Buddy|Aayush|Muskan)\b" 
 
     if re.search(name_pattern, user_input, flags=re.IGNORECASE):
@@ -187,7 +180,6 @@ def generate_agent_reply(runner, session, user_input):
         print(f" Error while getting agent response: {e}")
         return None
 
-# --------------------- Chat Loop ---------------------
 async def chat_loop(runner, session_service):
     session_id = f"postgres_session_{uuid.uuid4().hex[:8]}"
     session = await session_service.get_session(
@@ -217,7 +209,6 @@ async def chat_loop(runner, session_service):
             break
         generate_agent_reply(runner, session, user_input)
 
-# --------------------- Main ---------------------
 async def main():
     if not os.getenv("GOOGLE_API_KEY"):
         print("Error: Missing GOOGLE_API_KEY")
