@@ -1,37 +1,52 @@
-import pandas as pd
 from prophet import Prophet
+from datetime import datetime
+import matplotlib.pyplot as plt
+import os
+import uuid
 
-# Sample data with 'ds' (datestamp) and 'y' (value) columns
-df = pd.read_csv(
-    '/home/fm-pc-lt-174/Downloads/AI studio/2025_updated_synth_data_rw.csv',
-    parse_dates=["Date"],
-    dayfirst=True
-)
+dates = ["01/08/2022", "01/08/2022", "02/08/2022", "02/08/2022"]
+quantities = [57, 43, 51, 66] 
+skus = ["PROD-023","PROD-026","PROD-027","PROD-020"]
+brands = ["Samsung","Sony","Apple","Sony"]
+regions = ["West","North","North","East"]
+categories = ["Computers","Electronics","Electronics","Electronics"]
 
-# Keep only Date and Sales columns
-df = df[["Date", "Sales"]]
+# Convert dates
+dates_dt = [datetime.strptime(d, "%d/%m/%Y") for d in dates]
 
-# Rename for forecasting
-df.rename(columns={"Date": "ds", "Sales": "y"}, inplace=True)
+# Prophet expects a DataFrame with ds and y
+prophet_data = [{"ds": d, "y": y} for d, y in zip(dates_dt, quantities)]
 
-def forcasting_demand(period:int):
+import pandas as pd
+df = pd.DataFrame(prophet_data)
 
-    # df['Date'] = pd.to_datetime(df['Date']) 
+model = Prophet()
+model.fit(df)
 
-    model = Prophet()
-    model.fit(df)
 
+def forecasting_demand(period: int):
+    # Forecast future
     future = model.make_future_dataframe(periods=period)
-
     forecast = model.predict(future)
 
-        # Convert forecast to list of dicts with JSON-serializable dates
-    result = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].copy()
+    os.makedirs("predictions", exist_ok=True)
 
-    # Convert ds column to ISO strings
-    result['ds'] = result['ds'].dt.strftime('%Y-%m-%d')
+    fig = model.plot(forecast)
+    filename = f"predictions/plot_{uuid.uuid4()}.png"
 
-    # Convert to list of dicts
-    result = result.to_dict(orient='records')
+    fig = model.plot(forecast)
+    fig.savefig(filename)
 
+    # Build result list (same as your original)
+    result = [
+        {
+            "ds": row["ds"].strftime("%Y-%m-%d"),
+            "yhat": row["yhat"],
+            "yhat_lower": row["yhat_lower"],
+            "yhat_upper": row["yhat_upper"]
+        }
+        for _, row in forecast.iterrows()
+    ]
+    
     return result
+

@@ -16,18 +16,39 @@ from google.adk.events.event import Event
 from google.genai import types
 from google.genai.types import Part
 
-from my_agent.tools import forcasting_demand
+from my_agent.tools import forecasting_demand
+from datetime import datetime, timezone, date
+# from custom_memory_service.services.graphiti_logic import SearchResponse
+from pydantic import BaseModel, Field
+from typing import List, Optional
+import time
 
 USER_ID = "user_003"
 ENGINE_NAME = "roi_engine"
 PROJECT_NAME = "project_two"
 SESSION_ID = "session_002"
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8005"
 
 
 APP_NAME = "test_session"
 USER_ID = "user_two"
 session_id = "123"
+
+class SearchResultEdge(BaseModel):
+    fact: str
+    uuid: str
+    created_at: datetime | None = None
+    valid_at: datetime | None = None
+    invalid_at: datetime | None = None
+
+class SearchResultEpisode(BaseModel):
+    content: str
+    created_at: datetime | None = None
+
+class SearchResponse(BaseModel):
+    edges: List[SearchResultEdge]
+    episodes: List[SearchResultEpisode]
+
 
 async def create_session():
     session_service = InMemorySessionService()
@@ -68,41 +89,65 @@ def before_model_search_memory(
 
     # Search the memory for relevant context
     search_query = {
-        "user_id": "user_gamma",
-        "project_name": "project_gamma",
-        "engine_name": "engine_gamma",
+        "user_id": "user_delta",
+        "project_name": "project_beta",
+        "engine_name": "engine_beta",
         "query": last_user_message
     }
 
-
-    search_results = requests.post(f"{BASE_URL}/search", json=search_query)
-    # if search_results.status_code == 200:
-    #     memories = search_results.json().get("message", [])
-    #     print(f"[Callback] Retrieved {len(memories)} memories from search API.")
-    # else:
-    #     print(f"[Callback] Failed to retrieve memories. Status code: {search_results.status_code}")
-    #     memories = []
-
-    # --- Modification Example ---
-    # Add a prefix to the system instruction
-    original_instruction = llm_request.config.system_instruction or types.Content(role="system", parts=[])
-    prefix = f"Memory Search Result: {search_results.json()}\n\n"
-
     
-    # Ensure system_instruction is Content and parts list exists
-    if not isinstance(original_instruction, types.Content):
-         # Handle case where it might be a string (though config expects Content)
-         original_instruction = types.Content(role="system", parts=[types.Part(text=str(original_instruction))])
-    if not original_instruction.parts:
-        original_instruction.parts.append(types.Part(text="")) # Add an empty part if none exist
+    data = None
+    edges = []
+    episodes = []
+    prefix = ""
 
-    # Modify the text of the first part
+    try:
+        # Send the search request
+        search_results = requests.post(f"{BASE_URL}/search", json=search_query)
+        search_results.raise_for_status()  # Raises error for HTTP issues
+
+        # Parse JSON response
+        data = search_results.json()
+
+        # Parse into Pydantic model
+        search_response = SearchResponse(**data)
+        edges = search_response.edges
+        episodes = search_response.episodes
+
+        # Create a prefix with all data values
+        prefix = "Memory Search Result:\n"
+        for key, value in data.items():
+            prefix += f"{key}: {value}\n"
+
+        # # Save edges to a file (optional)
+        # filename = f"memory_result_{int(time.time())}.txt"
+        # with open(filename, "w") as f:
+        #     f.write(str(edges))
+
+    except (requests.RequestException, ValueError, TypeError, KeyError) as e:
+        print(f"An error occurred while fetching or processing search results: {e}")
+        data = None
+        edges = []
+        episodes = []
+        prefix = ""
+        
+    # --- FIX: Initialize original_instruction ---
+    original_instruction = llm_request.config.system_instruction or types.Content(role="system", parts=[])
+
+    if not isinstance(original_instruction, types.Content):
+        original_instruction = types.Content(role="system", parts=[types.Part(text=str(original_instruction))])
+
+    if not original_instruction.parts:
+        original_instruction.parts.append(types.Part(text=""))
+
+    # Modify the first part's text
     modified_text = prefix + (original_instruction.parts[0].text or "")
     original_instruction.parts[0].text = modified_text
     llm_request.config.system_instruction = original_instruction
+
     print(f"[Callback] Modified system instruction to: '{modified_text}'")
 
-    return None # Proceed with the (modified) request
+    return None
 
 async def after_model_add_memory(
     callback_context: CallbackContext, llm_response: LlmResponse
@@ -149,6 +194,13 @@ async def after_model_add_memory(
     }
 
     response = requests.post(f"{BASE_URL}/add_episode", json=episode_data)
+
+
+    # Save edges to a file (optional)
+    filename = f"memory_add_{int(time.time())}.txt"
+    with open(filename, "w") as f:
+        f.write(str(response))
+
     if response.status_code == 200:
         print("[Callback] Successfully added memory via API.")
     else:
@@ -159,7 +211,6 @@ async def after_model_add_memory(
 
 from google.adk.agents import Agent
 
-# Define your agent
 agent = Agent(
     name="VanillaRAGMemAgent",
     model="gemini-2.0-flash",
@@ -170,14 +221,26 @@ agent = Agent(
     ),
     instruction=(
         f"The user ID is '{USER_ID}' and the application name is '{ENGINE_NAME}'. "
-        "Ask the user for the forecasting period if needed and then use the `forcasting_demand` tool to respond."
+
+        "You have access to two key sources of information: "
+        "1) Memory search results (prepended in the system prompt), and "
+        "2) The `forecasting_demand` tool for forecasting tasks. "
+
+        "Use memory search results to answer factual questions about past data, "
+        "such as price per unit, revenue, quantity, brand, SKU, region, date, or category. "
+        "Answer directly from memory search results whenever possible. "
+
+        "If the user asks about future predictions, forecasting, or estimates, "
+        "do NOT call the `forecasting_demand` tool automatically. "
+        "Instead, ask the user first if they want a forecast to be performed. "
+        "Only call the tool if the user confirms. "
+        "When calling the tool, extract the forecast period and any SKU, Region, Brand, or Category mentioned in the question and pass them as filters. "
+
+        "If memory search results contain multiple matching rows, choose the most relevant one."
     ),
-    after_model_callback=after_model_add_memory,
     before_model_callback=before_model_search_memory,
-    tools=[forcasting_demand]
+    tools=[forecasting_demand]
 )
-
-
 
 root_agent = agent
 
