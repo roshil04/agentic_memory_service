@@ -3,6 +3,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import os
 import uuid
+import pandas as pd
 
 dates = ["01/08/2022", "01/08/2022", "02/08/2022", "02/08/2022"]
 quantities = [57, 43, 51, 66] 
@@ -37,7 +38,6 @@ def forecasting_demand(period: int):
     fig = model.plot(forecast)
     fig.savefig(filename)
 
-    # Build result list (same as your original)
     result = [
         {
             "ds": row["ds"].strftime("%Y-%m-%d"),
